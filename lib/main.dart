@@ -10,7 +10,7 @@ import 'dart:math';
 const double radius = 50000; // 50 km in meters
 
 // Locations for charging points
-const LatLng darmstadt = LatLng(49.8728, 8.6512);
+const LatLng darmstadt = LatLng(48.8728, 8.6512); 
 const LatLng mannheim = LatLng(49.4875, 8.4647);
 const LatLng heidelburg = LatLng(49.398348, 8.672433);
 const LatLng muenchen = LatLng(48.1351, 11.5820);
@@ -28,6 +28,7 @@ Future<void> main() async {
       ),
     );
   }
+  await initNotifications(); // Initialize notifications before running the app
   runApp(MyApp());
 }
 
@@ -61,6 +62,11 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'Charging Points Tracker',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
       home: HomePage(),
     );
   }
@@ -122,6 +128,7 @@ class _HomePageState extends State<HomePage> {
       });
       await FlutterBackground.enableBackgroundExecution();
       _showNotification('Tracking started');
+      print('i am running app in background');
       Timer.periodic(Duration(seconds: 5), (timer) {
         if (!_isTracking) {
           timer.cancel();
@@ -149,6 +156,8 @@ class _HomePageState extends State<HomePage> {
       'your_channel_name',
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
+      icon: 'app_icon',
     );
     const NotificationDetails platformChannelSpecifics = NotificationDetails(
       android: androidPlatformChannelSpecifics,
@@ -169,7 +178,8 @@ class _HomePageState extends State<HomePage> {
     for (LatLng point in chargingPoints) {
       double distance = _calculateDistance(currentLocation, point);
       if (distance < radius) {
-        _showNotification('You are near ${point.toString()}');
+        print('Testing alert for the check proximity');
+        _showNotification('You are near charging station ${currentLocation}');
         if (point == muenchen) {
           _stopTracking(); // Stop tracking if you reach the final point
         }
