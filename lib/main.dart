@@ -1,19 +1,16 @@
+// main.dart
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_background/flutter_background.dart';
-import 'package:flutter/services.dart'; // Import for MethodChannel
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:math';
 
-const double radius = 50000; // 50 km in meters
-
-// Locations for charging points
-const LatLng darmstadt = LatLng(48.8728, 8.6512); 
-const LatLng mannheim = LatLng(49.4875, 8.4647);
-const LatLng heidelburg = LatLng(49.398348, 8.672433);
-const LatLng muenchen = LatLng(48.1351, 11.5820);
+import 'constants.dart'; // Import the constants
+import 'notification_service.dart'; // Import the notification service
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,8 +25,11 @@ Future<void> main() async {
       ),
     );
   }
-  await initNotifications(); // Initialize notifications before running the app
-  runApp(MyApp());
+
+  final notificationService = NotificationService();
+  await notificationService.initNotifications();
+
+  runApp(MyApp(notificationService: notificationService));
 }
 
 Future<bool> _checkAndRequestPermissions() async {
@@ -38,7 +38,6 @@ Future<bool> _checkAndRequestPermissions() async {
   if (!status.isGranted) {
     final result = await Permission.ignoreBatteryOptimizations.request();
     if (!result.isGranted) {
-      // Use platform channels to open the battery optimization settings
       final platform = MethodChannel('com.example.yourapp/battery_optimizations');
       await platform.invokeMethod('openBatteryOptimizationSettings');
       return false;
@@ -47,18 +46,11 @@ Future<bool> _checkAndRequestPermissions() async {
   return true;
 }
 
-Future<void> initNotifications() async {
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('app_icon');
-  const InitializationSettings initializationSettings = InitializationSettings(
-    android: initializationSettingsAndroid,
-  );
-
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-}
-
 class MyApp extends StatelessWidget {
+  final NotificationService notificationService;
+
+  MyApp({required this.notificationService});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -67,19 +59,22 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: HomePage(),
+      home: HomePage(notificationService: notificationService),
     );
   }
 }
 
 class HomePage extends StatefulWidget {
+  final NotificationService notificationService;
+
+  HomePage({required this.notificationService});
+
   @override
   _HomePageState createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
   final Set<Marker> _markers = {};
-  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   bool _isTracking = false;
   String _trackingStatus = 'Tracking is off';
 
@@ -98,26 +93,28 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _setMarkers() {
-    _markers.add(Marker(
-      markerId: MarkerId('darmstadt'),
-      position: darmstadt,
-      infoWindow: InfoWindow(title: 'Darmstadt'),
-    ));
-    _markers.add(Marker(
-      markerId: MarkerId('mannheim'),
-      position: mannheim,
-      infoWindow: InfoWindow(title: 'Mannheim'),
-    ));
-    _markers.add(Marker(
-      markerId: MarkerId('heidelburg'),
-      position: heidelburg,
-      infoWindow: InfoWindow(title: 'Heidelburg'),
-    ));
-    _markers.add(Marker(
-      markerId: MarkerId('muenchen'),
-      position: muenchen,
-      infoWindow: InfoWindow(title: 'Muenchen'),
-    ));
+    _markers.addAll([
+      Marker(
+        markerId: MarkerId('darmstadt'),
+        position: darmstadt,
+        infoWindow: InfoWindow(title: 'Darmstadt'),
+      ),
+      Marker(
+        markerId: MarkerId('mannheim'),
+        position: mannheim,
+        infoWindow: InfoWindow(title: 'Mannheim'),
+      ),
+      Marker(
+        markerId: MarkerId('heidelburg'),
+        position: heidelburg,
+        infoWindow: InfoWindow(title: 'Heidelburg'),
+      ),
+      Marker(
+        markerId: MarkerId('muenchen'),
+        position: muenchen,
+        infoWindow: InfoWindow(title: 'Muenchen'),
+      ),
+    ]);
   }
 
   void _startTracking() async {
@@ -127,8 +124,7 @@ class _HomePageState extends State<HomePage> {
         _trackingStatus = 'Tracking is on';
       });
       await FlutterBackground.enableBackgroundExecution();
-      _showNotification('Tracking started');
-      print('i am running app in background');
+      widget.notificationService.showNotification('Tracking started');
       Timer.periodic(Duration(seconds: 5), (timer) {
         if (!_isTracking) {
           timer.cancel();
@@ -146,29 +142,8 @@ class _HomePageState extends State<HomePage> {
         _trackingStatus = 'Tracking is off';
       });
       await FlutterBackground.disableBackgroundExecution();
-      _showNotification('Tracking stopped');
+      widget.notificationService.showNotification('Tracking stopped');
     }
-  }
-
-  Future<void> _showNotification(String message) async {
-    const AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'your_channel_id',
-      'your_channel_name',
-      importance: Importance.max,
-      priority: Priority.high,
-      playSound: true,
-      icon: 'app_icon',
-    );
-    const NotificationDetails platformChannelSpecifics = NotificationDetails(
-      android: androidPlatformChannelSpecifics,
-    );
-    await _flutterLocalNotificationsPlugin.show(
-      0,
-      'Location Tracker',
-      message,
-      platformChannelSpecifics,
-      payload: 'item x',
-    );
   }
 
   void _checkProximity() {
@@ -178,10 +153,9 @@ class _HomePageState extends State<HomePage> {
     for (LatLng point in chargingPoints) {
       double distance = _calculateDistance(currentLocation, point);
       if (distance < radius) {
-        print('Testing alert for the check proximity');
-        _showNotification('You are near charging station ${currentLocation}');
+        widget.notificationService.showNotification('You are near charging station $currentLocation');
         if (point == muenchen) {
-          _stopTracking(); // Stop tracking if you reach the final point
+          _stopTracking();
         }
         break;
       }
@@ -193,9 +167,9 @@ class _HomePageState extends State<HomePage> {
     double dLat = _toRadians(end.latitude - start.latitude);
     double dLon = _toRadians(end.longitude - start.longitude);
     double a =
-      (sin(dLat / 2) * sin(dLat / 2)) +
-      cos(_toRadians(start.latitude)) * cos(_toRadians(end.latitude)) *
-      (sin(dLon / 2) * sin(dLon / 2));
+        (sin(dLat / 2) * sin(dLat / 2)) +
+        cos(_toRadians(start.latitude)) * cos(_toRadians(end.latitude)) *
+        (sin(dLon / 2) * sin(dLon / 2));
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return earthRadius * c;
   }
